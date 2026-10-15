@@ -16,6 +16,14 @@
                 "CONFIG_CAMERA_OV5640_DVP_YUV422_800X600_10FPS=y",
                 "CONFIG_CAMERA_OV5640_DVP_IF_FORMAT_INDEX_DEFAULT=0"
             ]
+        },
+        {
+            "name": "esp32-s3-audio-board-r76s-headless",
+            "sdkconfig_append": [
+                "CONFIG_AUDIO_BOARD_HEADLESS=y",
+                "CONFIG_USE_DEVICE_AEC=y",
+                "CONFIG_OTA_URL=\"http://192.168.4.2:8080/xiaozhi/ota/\""
+            ]
         }
     ]
 }

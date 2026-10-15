@@ -1,6 +1,10 @@
 #include "wifi_board.h"
 #include "codecs/box_audio_codec.h"
+#ifndef CONFIG_AUDIO_BOARD_HEADLESS
 #include "display/lcd_display.h"
+#include "esp_video.h"
+#include "esp_lcd_jd9853.h"
+#endif
 #include "system_reset.h"
 #include "application.h"
 #include "button.h"
@@ -15,9 +19,7 @@
 #include <esp_lcd_st77916.h>
 #include <esp_timer.h>
 #include "esp_io_expander_tca95xx_16bit.h"
-#include "esp_video.h"
 #include "led/circular_strip.h"
-#include "esp_lcd_jd9853.h"
 
 #define TAG "waveshare_s3_audio_board"
 
@@ -30,8 +32,10 @@ private:
     Button boot_button_;
     i2c_master_bus_handle_t i2c_bus_;
     esp_io_expander_handle_t io_expander = NULL;
+#ifndef CONFIG_AUDIO_BOARD_HEADLESS
     LcdDisplay* display_;
     EspVideo* camera_;
+#endif
 
     void InitializeI2c() {
         // Initialize I2C peripheral
@@ -47,9 +51,19 @@ private:
     void InitializeTca9555(void)
     {
         esp_err_t ret = esp_io_expander_new_i2c_tca95xx_16bit(i2c_bus_, I2C_ADDRESS, &io_expander);  
-        if(ret != ESP_OK)
-            ESP_LOGE(TAG, "TCA9554 create returned error");                                                                                  // 打印引脚状态
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "TCA9555 create returned error: %s", esp_err_to_name(ret));
+            return;
+        }
 
+#ifdef CONFIG_AUDIO_BOARD_HEADLESS
+        // The headless board only needs EXIO8 to power the speaker amplifier.
+        // Leave the LCD, touch and camera reset lines untouched.
+        ESP_ERROR_CHECK(esp_io_expander_set_dir(
+            io_expander, IO_EXPANDER_PIN_NUM_8, IO_EXPANDER_OUTPUT));
+        ESP_ERROR_CHECK(esp_io_expander_set_level(
+            io_expander, IO_EXPANDER_PIN_NUM_8, 1));
+#else
         ret = esp_io_expander_set_dir(io_expander, IO_EXPANDER_PIN_NUM_0 | IO_EXPANDER_PIN_NUM_1 | IO_EXPANDER_PIN_NUM_8|IO_EXPANDER_PIN_NUM_5|IO_EXPANDER_PIN_NUM_6, IO_EXPANDER_OUTPUT);                 // 设置引脚 EXIO0 和 EXIO1 模式为输出
         ESP_ERROR_CHECK(ret);
         ret = esp_io_expander_set_level(io_expander, IO_EXPANDER_PIN_NUM_0 | IO_EXPANDER_PIN_NUM_1, 1);                                // 复位 LCD 与 TouchPad
@@ -66,7 +80,10 @@ private:
         ret = esp_io_expander_set_level(io_expander, IO_EXPANDER_PIN_NUM_6, true); 
         vTaskDelay(pdMS_TO_TICKS(5));
         ESP_ERROR_CHECK(ret);
+#endif
     }
+
+#ifndef CONFIG_AUDIO_BOARD_HEADLESS
 
     void InitializeSpi() {
         spi_bus_config_t buscfg = {};
@@ -143,6 +160,7 @@ private:
         display_ = new SpiLcdDisplay(panel_io, panel,
                                      DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY);
     }
+#endif
 
     void InitializeButtons() {
         boot_button_.OnClick([this]() {
@@ -155,6 +173,7 @@ private:
         });
     }
 
+#ifndef CONFIG_AUDIO_BOARD_HEADLESS
     void InitializeCamera() {
         static esp_cam_ctlr_dvp_pin_config_t dvp_pin_config = {
             .data_width = CAM_CTLR_DATA_WIDTH_8,
@@ -195,13 +214,15 @@ private:
         camera_ = new EspVideo(video_config);
 
     }
+#endif
 public:
     CustomBoard() :
         boot_button_(BOOT_BUTTON_GPIO) {
         InitializeI2c();
         InitializeTca9555();
-        InitializeSpi();
         InitializeButtons();
+#ifndef CONFIG_AUDIO_BOARD_HEADLESS
+        InitializeSpi();
         #ifdef LCD_TYPE_JD9853_SERIAL
         InitializeJd9853Display(); 
         #else
@@ -209,6 +230,9 @@ public:
         #endif
         InitializeCamera();
         GetBacklight()->RestoreBrightness();
+#else
+        ESP_LOGI(TAG, "Headless R76S variant: LCD and camera initialization skipped");
+#endif
     }
 
     virtual Led* GetLed() override {
@@ -222,6 +246,7 @@ public:
             return &audio_codec;
     }
 
+#ifndef CONFIG_AUDIO_BOARD_HEADLESS
     virtual Display* GetDisplay() override {
         return display_;
     }
@@ -234,6 +259,7 @@ public:
     virtual Camera* GetCamera() override {
         return camera_;
     }
+#endif
 };
 
 DECLARE_BOARD(CustomBoard);
